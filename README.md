@@ -1,4 +1,4 @@
-#System analityczno-predykcyjny maszyn na zakładzie produkcyjnym.
+# System analityczno-predykcyjny maszyn na zakładzie produkcyjnym.
 
 Celem niniejszej pracy jest przedstawienie idei stworzenia taniej i funkcjonalnej konstrukcji pracującej w systemie analityczno-predykcyjnym na zakładzie produkcyjnym. System ma za zadanie monitorowac prace w czasie rzeczywistym i dodadkowo analizować i oceniać dane zebrane podczas pracy maszyny za pomocą modelu AI.
 System składa sie z platformy Raspbery Pi5 oraz Nucleo STM32F756ZG. Raspbery za pomoca protokołu SPI odczytuje dane z modułu MCP3008 , natomiast platforma STM32 odczytuje dane z modułu ADXL345 poprzez protokół I2C. MCP3008 jest 8 kanałowym, 10 bitowym przetwornikiem analogowo cyfrowym, który poprzez rezystorowy 
