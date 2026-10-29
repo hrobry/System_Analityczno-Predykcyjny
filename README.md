@@ -5,17 +5,25 @@ System składa sie z platformy Raspbery Pi5 oraz Nucleo STM32F756ZG. Raspbery za
 dzielnik napięcia przekrztałca sygnały analogowe z obiektu badań o wartości 0-10V najpierw na wartości o zakresie 0-3,3V a następnie wartości te sa przekazywane protokołem SPI prosto na platforme Rpi. Moduł ADXL345 jest akcelerometrem za jego pomoca mierzone sa wstrząsy na badanym urządzeniu, które są wstępnie przetwarzane przez 
 platforme Nucleo STM32F756ZG a następnie wysyłane poprzez złącze ethernet bezpośrednio na platforme Rpi. Platforma Raspbery Pi odczytuje dane i zapisuje je do bazy danych PostgreSQL. Na oprogramowaniu Linux Debian 12 (Bookworm) został zamontowany serwer grafany pracujący z bazą PostgreSQL służący do jako interfejs człowiek-maszyna.
 
-## Schemat elektroniczny
-<<<<<<< HEAD
+![Schemat blokowy Systemu działającego na RPi](Pics/Schemat_RPi.png)
 
-![alt](\Pics\Schemat elektroniczny RPI.png)
-=======
+
+![Schemat blokowy Komunikacji pomiędzy RPi a STM32](Pics/Schemat_RPi_STM.png)
+
+## Schemat elektroniczny
+
 ![Diagram połączeń elektronicznych pomiędzy RPi a MCP3008](Pics/Schemat_elektroniczny_RPI.png)
->>>>>>> branch 'main' of https://github.com/hrobry/System_Analityczno-Predykcyjny.git
+
+
+![Diagram połączeń elektronicznych pomiędzy STM32F756ZG a ADXL345](Pics/Schemat_elektroniczny_STM.png)
 
 ## Modele ML
 
 System umożliwia zbieranie danych o pracy maszyniy wyświetlanie ich a następnie prace z nimi w czasie rzeczywistym. System analizuje dane poprzez wytrenowany model isolation forest. Jest to algorytm uczenia maszynowego bez nadzoru. W skrócie algorytm skupia się na izolowaniu próbek. 
 Anomalie są rzadkie i znacznie różnią się od reszty danych, dlatego łatwiej je odseparować. Wymagają mniejszej liczby losowych podziałów i mają krótkie ścieżki w drzewach decyzyjnych. Dzięki czemu jest możliwa praca z komputerami klasy Rpi. Poniweaż system pracuje w czasie rzeczysistym na prawdziwych informacjach zebranych na maszynie występuje koniecznośc trenowania i analizy danych w oknach czasowych.
 
+![Wykres przedstawiający wykrycie anomalii](Pics/predykcja.png)
+
 ## Podsumowanie
+
+![Przykład wdrożenia](Pics/stacja1.png)
