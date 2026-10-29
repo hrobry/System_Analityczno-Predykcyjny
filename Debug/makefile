@@ -1,6 +1,6 @@
 ################################################################################
 # Automatically-generated file. Do not edit!
-# Toolchain: GNU Tools for STM32 (13.3.rel1)
+# Toolchain: GNU Tools for STM32 (14.3.rel1)
 ################################################################################
 
 -include ../makefile.init
@@ -13,6 +13,7 @@ RM := rm -rf
 -include LWIP/Target/subdir.mk
 -include LWIP/App/subdir.mk
 -include Drivers/STM32F7xx_HAL_Driver/subdir.mk
+-include Drivers/BSP/Components/subdir.mk
 -include Core/Startup/subdir.mk
 -include Core/Src/subdir.mk
 -include objects.mk
@@ -61,34 +62,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := AccelometerPMCPP
+BUILD_ARTIFACT_NAME := System_Analityczno-Predykcyjny
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-AccelometerPMCPP.elf \
+System_Analityczno-Predykcyjny.elf \
 
 MAP_FILES += \
-AccelometerPMCPP.map \
+System_Analityczno-Predykcyjny.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-AccelometerPMCPP.list \
+System_Analityczno-Predykcyjny.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: AccelometerPMCPP.elf secondary-outputs
+main-build: System_Analityczno-Predykcyjny.elf secondary-outputs
 
 # Tool invocations
-AccelometerPMCPP.elf AccelometerPMCPP.map: $(OBJS) $(USER_OBJS) F:\Projekty\Ramie\ druga\ proba\KomunikacjaJavaSTM\pracaMagisteskaCzujnikWstrasow\AccelometerPMCPP\STM32F756ZGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-g++ -o "AccelometerPMCPP.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"F:\Projekty\Ramie druga proba\KomunikacjaJavaSTM\pracaMagisteskaCzujnikWstrasow\AccelometerPMCPP\STM32F756ZGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="AccelometerPMCPP.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
+System_Analityczno-Predykcyjny.elf System_Analityczno-Predykcyjny.map: $(OBJS) $(USER_OBJS) C:\Programy\STM32\Workbench\AccelometerPMCPP\STM32F756ZGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-g++ -o "System_Analityczno-Predykcyjny.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"C:\Programy\STM32\Workbench\AccelometerPMCPP\STM32F756ZGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="System_Analityczno-Predykcyjny.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -97,14 +98,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-AccelometerPMCPP.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "AccelometerPMCPP.list"
+System_Analityczno-Predykcyjny.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "System_Analityczno-Predykcyjny.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) AccelometerPMCPP.elf AccelometerPMCPP.list AccelometerPMCPP.map default.size.stdout
+	-$(RM) System_Analityczno-Predykcyjny.elf System_Analityczno-Predykcyjny.list System_Analityczno-Predykcyjny.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

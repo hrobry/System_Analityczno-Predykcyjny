@@ -20,22 +20,18 @@
 #include "main.h"
 #include "i2c.h"
 #include "lwip.h"
-#include "rtc.h"
-#include "usart.h"
 #include "usb_otg.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "lwip/udp.h"
-
 #include "adxl345.h"
 #include <string.h>
 #include <stdio.h>
-
 #include "lwip/apps/sntp.h"
 #include "lwip/ip_addr.h"
-#include <rtc.h>     // CubeMX wygenerowane pliki RTC
+//#include <rtc.h>     // CubeMX wygenerowane pliki RTC
 #include <time.h>
 /* USER CODE END Includes */
 
@@ -104,18 +100,11 @@ void calibrate_adxl345(void) {
 void UDP_Init(void)
 {
     udp = udp_new();
-    IP4_ADDR(&dest_ip, 192,168,0,102); // <-- tu wpisz adres PC odbierającego dane
+    IP4_ADDR(&dest_ip, 3,53,17,22); // <-- tu wpisz adres PC odbierającego dane 3.53.17.22 ///192,168,0,102
     udp_bind(udp, IP_ADDR_ANY, 5005); // port źródłowy
-
-
-
-
 }
 void sendMessageToRasp(int x, int y , int z)
 {
-
-
-
          char msg[64];
          int len = sprintf(msg, " dane jakie wysyłam to  : %d,%d,%d", x, y, z);
 
@@ -123,53 +112,6 @@ void sendMessageToRasp(int x, int y , int z)
          memcpy(p->payload, msg, len);
          udp_sendto(udp, p, &dest_ip, dest_port);
          pbuf_free(p);
-
-
-}
-void Update_RTC_from_NTP(void)
-{
-    time_t t = sntp_get_current_timestamp(); // pobiera czas w sekundach od 1970
-    struct tm *timeinfo = localtime(&t);
-
-    RTC_TimeTypeDef sTime = {0};
-    RTC_DateTypeDef sDate = {0};
-
-    sTime.Hours   = timeinfo->tm_hour;
-    sTime.Minutes = timeinfo->tm_min;
-    sTime.Seconds = timeinfo->tm_sec;
-
-    sDate.Date    = timeinfo->tm_mday;
-    sDate.Month   = timeinfo->tm_mon + 1;      // tm_mon 0-11
-    sDate.Year    = timeinfo->tm_year - 100;   // tm_year od 1900, RTC od 2000
-
-    HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-    HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-}
-
-void StartNTP(void)
-{
-    sntp_setoperatingmode(SNTP_OPMODE_POLL); // tryb regularnego zapytania
-    // ustawienie serwera po IP
-    ip_addr_t ntp_server;
-    IP4_ADDR(&ntp_server, 192,168,0,102); // <-- IP Raspberry Pi
-    sntp_setserver(0, &ntp_server);
-
-    sntp_init(); // start klienta SNTP
-
-
-        // Poczekaj aż NTP się zsynchronizuje
-        int max_wait = 10000; // 10 sekund
-        while(time(NULL) < 1600000000 && max_wait-- > 0) { // Sprawdź czy czas jest rozsądny
-            HAL_Delay(1);
-            MX_LWIP_Process();
-        }
-
-        if(time(NULL) < 1600000000) {
-            printf("NTP nie działa, używam czasu lokalnego\n");
-            sendMessageToRasp(9,9,9);
-            // Ustaw domyślny czas
-           // set_time(1700000000);
-        }
 
 }
 
@@ -182,6 +124,7 @@ void StartNTP(void)
   */
 int main(void)
 {
+
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
@@ -192,7 +135,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  HAL_Delay(500);
 
   // W main użyj skorygowanych wartości
 
@@ -207,36 +150,47 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   MX_I2C1_Init();
   MX_LWIP_Init();
-  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
-  StartNTP();     // uruchamia klienta NTP
-
+  ///StartNTP();     // uruchamia klienta NTP
+  HAL_GPIO_WritePin(GPIOG, GPIO_PIN_6, GPIO_PIN_RESET);
 
   UDP_Init();
+  const char *  ajpi;
+  extern struct netif gnetif;
+  ADXL345_Init(&hi2c1);
+  for (int i = 0; i < 40; ++i) { // ~20s jeśli delay 500ms
+             MX_LWIP_Process();
+             if (gnetif.ip_addr.addr != 0) break;
+             HAL_Delay(500);
+         }
 
-   ADXL345_Init(&hi2c1);
-
+         // Wypisz IP na UART (jeśli printf skonfigurowany)
+         {
+             ip_addr_t ip = gnetif.ip_addr;
+             if (ip.addr != 0) {
+                 printf("Assigned IP: %s\r\n", ipaddr_ntoa(&ip));
+                 ajpi = ipaddr_ntoa(&ip);
+             } else {
+                 printf("No IP assigned (DHCP failed)\r\n");
+             }
+         }
    int16_t x, y, z;
-  // sendMessageToRasp(1,2,3);
+  // sendMessageToRasp(1,2,3); //Debug
    while (1)
    {
 
        MX_LWIP_Process(); // cubeMX wygenerowało - potrzebne w pętli
-     //  sendMessageToRasp(1,1,1);
-       GPIO_PinState state = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8);
-       if (state==GPIO_PIN_SET)
+     //  sendMessageToRasp(1,1,1); // Debug
+
+       GPIO_PinState state1 = HAL_GPIO_ReadPin(GPIOC,GPIO_PIN_9);
+
+       if (state1!=GPIO_PIN_SET)
        {
-
-       }else{
-
-
-        calibrate_adxl345();
-
+         calibrate_adxl345();
        }
        if (ADXL345_ReadXYZ(&hi2c1, &x, &y, &z))
        {
@@ -246,34 +200,30 @@ int main(void)
     	       y -= calib.y_offset;
     	       z -= calib.z_offset;
 
+    	       HAL_GPIO_WritePin(GPIOG, GPIO_PIN_6, GPIO_PIN_RESET);
 
-
-    	   //sendMessageToRasp(3,2,1);
+    	   //sendMessageToRasp(3,2,1);//Debug
            char msg[32];
-           time_t t = time(NULL); // pobiera czas systemowy (RTC lub SNTP)
            int len = sprintf(msg, " %d, %d, %d", x, y, z);
-
            struct pbuf *p = pbuf_alloc(PBUF_TRANSPORT, len, PBUF_RAM);
            memcpy(p->payload, msg, len);
-
            udp_sendto(udp, p, &dest_ip, dest_port);
            pbuf_free(p);
 
        }
 
 
-       HAL_Delay(100); // ~50Hz
+       HAL_Delay(10); // ~50Hz
    }
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+
   /* USER CODE END 3 */
 }
 
@@ -289,17 +239,17 @@ void SystemClock_Config(void)
   /** Configure LSE Drive Capability
   */
   HAL_PWR_EnableBkUpAccess();
-  __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
-  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
@@ -310,6 +260,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+
   /** Initializes the CPU, AHB and APB buses clocks
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -340,11 +291,14 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+
+	  sendMessageToRasp(0,0,0);//Debug
+
+
   }
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
@@ -360,4 +314,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
