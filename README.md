@@ -6,7 +6,7 @@ dzielnik napięcia przekrztałca sygnały analogowe z obiektu badań o wartości
 platforme Nucleo STM32F756ZG a następnie wysyłane poprzez złącze ethernet bezpośrednio na platforme Rpi. Platforma Raspbery Pi odczytuje dane i zapisuje je do bazy danych PostgreSQL. Na oprogramowaniu Linux Debian 12 (Bookworm) został zamontowany serwer grafany pracujący z bazą PostgreSQL służący do jako interfejs człowiek-maszyna.
 
 ## Schemat elektroniczny
-![Diagram połączeń elektronicznych pomiędzy RPi a MCP3008](Pics/Schemat elektroniczny RPI.png)
+![Diagram połączeń elektronicznych pomiędzy RPi a MCP3008](Pics/Schemat_elektroniczny_RPI.png)
 
 ## Modele ML
 
