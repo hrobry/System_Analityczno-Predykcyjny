@@ -7,6 +7,7 @@ platforme Nucleo STM32F756ZG a następnie wysyłane poprzez złącze ethernet be
 
 ## Schemat elektroniczny
 
+![alt](\Pics\Schemat elektroniczny RPI.png)
 
 ## Modele ML
 
