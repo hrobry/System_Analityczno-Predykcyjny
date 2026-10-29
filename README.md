@@ -5,10 +5,10 @@ System składa sie z platformy Raspbery Pi5 oraz Nucleo STM32F756ZG. Raspbery za
 dzielnik napięcia przekrztałca sygnały analogowe z obiektu badań o wartości 0-10V najpierw na wartości o zakresie 0-3,3V a następnie wartości te sa przekazywane protokołem SPI prosto na platforme Rpi. Moduł ADXL345 jest akcelerometrem za jego pomoca mierzone sa wstrząsy na badanym urządzeniu, które są wstępnie przetwarzane przez 
 platforme Nucleo STM32F756ZG a następnie wysyłane poprzez złącze ethernet bezpośrednio na platforme Rpi. Platforma Raspbery Pi odczytuje dane i zapisuje je do bazy danych PostgreSQL. Na oprogramowaniu Linux Debian 12 (Bookworm) został zamontowany serwer grafany pracujący z bazą PostgreSQL służący do jako interfejs człowiek-maszyna.
 
-![Schemat blokowy Systemu działającego na RPi](Pics/Schemat_RPi.png)
+![Schemat blokowy Systemu działającego na RPi](Pics/Schemat_RPI.png)
 
 
-![Schemat blokowy Komunikacji pomiędzy RPi a STM32](Pics/Schemat_RPi_STM.png)
+![Schemat blokowy Komunikacji pomiędzy RPi a STM32](Pics/Schemat_RPI_STM.png)
 
 ## Schemat elektroniczny
 
@@ -26,4 +26,4 @@ Anomalie są rzadkie i znacznie różnią się od reszty danych, dlatego łatwie
 
 ## Podsumowanie
 
-![Przykład wdrożenia](Pics/stacja1.png)
+![Przykład wdrożenia](Pics/stacja1.jpg)
