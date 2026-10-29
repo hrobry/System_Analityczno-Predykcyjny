@@ -1,0 +1,16 @@
+# System analityczno-predykcyjny maszyn na zakładzie produkcyjnym.
+
+  Celem niniejszej pracy jest przedstawienie idei stworzenia taniej i funkcjonalnej konstrukcji pracującej w systemie analityczno-predykcyjnym na zakładzie produkcyjnym. System ma za zadanie monitorowac prace w czasie rzeczywistym i dodadkowo analizować i oceniać dane zebrane podczas pracy maszyny za pomocą modelu AI.
+System składa sie z platformy Raspbery Pi5 oraz Nucleo STM32F756ZG. Raspbery za pomoca protokołu SPI odczytuje dane z modułu MCP3008 , natomiast platforma STM32 odczytuje dane z modułu ADXL345 poprzez protokół I2C. MCP3008 jest 8 kanałowym, 10 bitowym przetwornikiem analogowo cyfrowym, który poprzez rezystorowy 
+dzielnik napięcia przekrztałca sygnały analogowe z obiektu badań o wartości 0-10V najpierw na wartości o zakresie 0-3,3V a następnie wartości te sa przekazywane protokołem SPI prosto na platforme Rpi. Moduł ADXL345 jest akcelerometrem za jego pomoca mierzone sa wstrząsy na badanym urządzeniu, które są wstępnie przetwarzane przez 
+platforme Nucleo STM32F756ZG a następnie wysyłane poprzez złącze ethernet bezpośrednio na platforme Rpi. Platforma Raspbery Pi odczytuje dane i zapisuje je do bazy danych PostgreSQL. Na oprogramowaniu Linux Debian 12 (Bookworm) został zamontowany serwer grafany pracujący z bazą PostgreSQL służący do jako interfejs człowiek-maszyna.
+
+## Schemat elektroniczny
+
+
+## Modele ML
+
+System umożliwia zbieranie danych o pracy maszyniy wyświetlanie ich a następnie prace z nimi w czasie rzeczywistym. System analizuje dane poprzez wytrenowany model isolation forest. Jest to algorytm uczenia maszynowego bez nadzoru. W skrócie algorytm skupia się na izolowaniu próbek. 
+Anomalie są rzadkie i znacznie różnią się od reszty danych, dlatego łatwiej je odseparować. Wymagają mniejszej liczby losowych podziałów i mają krótkie ścieżki w drzewach decyzyjnych. Dzięki czemu jest możliwa praca z komputerami klasy Rpi. Poniweaż system pracuje w czasie rzeczysistym na prawdziwych informacjach zebranych na maszynie występuje koniecznośc trenowania i analizy danych w oknach czasowych.
+
+## Podsumowanie
