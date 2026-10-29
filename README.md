@@ -3,14 +3,17 @@
   Celem niniejszej pracy jest przedstawienie idei stworzenia taniej i funkcjonalnej konstrukcji pracującej w systemie analityczno-predykcyjnym na zakładzie produkcyjnym. System ma za zadanie monitorowac prace w czasie rzeczywistym i dodadkowo analizować i oceniać dane zebrane podczas pracy maszyny za pomocą modelu AI.
 System składa sie z platformy Raspbery Pi5 oraz Nucleo STM32F756ZG. Raspbery za pomoca protokołu SPI odczytuje dane z modułu MCP3008 , natomiast platforma STM32 odczytuje dane z modułu ADXL345 poprzez protokół I2C. MCP3008 jest 8 kanałowym, 10 bitowym przetwornikiem analogowo cyfrowym, który poprzez rezystorowy 
 dzielnik napięcia przekrztałca sygnały analogowe z obiektu badań o wartości 0-10V najpierw na wartości o zakresie 0-3,3V a następnie wartości te sa przekazywane protokołem SPI prosto na platforme Rpi. Moduł ADXL345 jest akcelerometrem za jego pomoca mierzone sa wstrząsy na badanym urządzeniu, które są wstępnie przetwarzane przez 
-platforme Nucleo STM32F756ZG a następnie wysyłane poprzez złącze ethernet bezpośrednio na platforme Rpi. Platforma Raspbery Pi odczytuje dane i zapisuje je do bazy danych PostgreSQL. Na oprogramowaniu Linux Debian 12 (Bookworm) został zamontowany serwer grafany pracujący z bazą PostgreSQL służący do jako interfejs człowiek-maszyna.
+platforme Nucleo STM32F756ZG a następnie wysyłane poprzez złącze ethernet bezpośrednio na platforme Rpi. Platforma Raspbery Pi odczytuje dane i zapisuje je do bazy danych PostgreSQL. Na oprogramowaniu Linux Debian 12 (Bookworm) został zamontowany serwer grafany pracujący z bazą PostgreSQL służący do jako interfejs człowiek-maszyna. 
 
-![Schemat blokowy Systemu działającego na RPi](Pics/Schemat_RPI.png)
+  Na poniższej grafice przedstawiony został schemat blokowy systemu dzialającego na plaftormie RPI. Baza danych jest centralnym punktem całego systemu. 
 
+![Schemat blokowy systemu działającego na RPi](Pics/Schemat_RPI.png)
 
+  Na poniższej grafice przedstawiony jest schemat wymiany danych w systemie.
 ![Schemat blokowy Komunikacji pomiędzy RPi a STM32](Pics/Schemat_RPI_STM.png)
 
 ## Schemat elektroniczny
+
 
 ![Diagram połączeń elektronicznych pomiędzy RPi a MCP3008](Pics/Schemat_elektroniczny_RPI.png)
 
