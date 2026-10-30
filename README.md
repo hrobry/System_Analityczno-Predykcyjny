@@ -10,15 +10,19 @@ Programy użyte w projekcie pracujące na platformie RPI zamieszczone sa w pliku
 
 ![Schemat blokowy systemu działającego na RPi](Pics/Schemat_RPI.png)
 
+  
   Na poniższej grafice przedstawiony jest schemat wymiany danych w systemie.
+  
 ![Schemat blokowy Komunikacji pomiędzy RPi a STM32](Pics/Schemat_RPI_STM.png)
 
 ## Schemat elektroniczny
 
-
+	Schemat połączeń elektronicznych pomiędzy RPi a MCP3008
+	
 ![Diagram połączeń elektronicznych pomiędzy RPi a MCP3008](Pics/Schemat_elektroniczny_RPI.png)
 
-
+	Schemat połączeń elektronicznych pomiędzy STM32F756ZG a ADXL345
+	
 ![Diagram połączeń elektronicznych pomiędzy STM32F756ZG a ADXL345](Pics/Schemat_elektroniczny_STM.png)
 
 ## Modele ML
@@ -29,5 +33,7 @@ Gotowe programy użyte w procesie napiane w języku python zamieszczone są w fo
 ![Wykres przedstawiający wykrycie anomalii](Pics/predykcja.png)
 
 ## Podsumowanie
+
+	System mozna wdrożyć w zakładach produkcyjnych, labolatoriach badawczych lub w amatorskich rozwiązaniach.
 
 ![Przykład wdrożenia](Pics/stacja1.jpg)
