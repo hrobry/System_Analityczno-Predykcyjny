@@ -1,0 +1,313 @@
+
+
+###################################################
+
+
+#Data preparing for training in window mode
+
+
+##################################################
+
+
+import numpy as np
+import pandas as pd
+import joblib
+
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import IsolationForest
+
+CSV_PATH = r"C:xxx.csv"  # <- path with training dataset
+#CSV_PATH = r"C:xxx.csv"
+TIME_COL = "timestamp"
+AXES = ["x", "y", "z"]
+
+WINDOW_MINUTES = 1
+STEP_MINUTES = 1
+MIN_ROWS = 2  # minimal count of samples in window
+
+MODEL_OUT = "xxx.joblib"
+
+FEATURE_NAMES = [f"{c}_{stat}" for c in AXES for stat in ["mean", "std", "min", "max", "last"]]
+
+def window_features_15(w: pd.DataFrame) -> list[float]:
+    feats = []
+    for c in AXES:
+        s = w[c].astype(float)
+        feats.extend([
+            float(s.mean()),
+            float(s.std(ddof=0)),
+            float(s.min()),
+            float(s.max()),
+            float(s.iloc[-1]),
+        ])
+    return feats
+
+# reading CSV file
+df = pd.read_csv(CSV_PATH)
+df[TIME_COL] = pd.to_datetime(df[TIME_COL], errors="coerce", utc=True)
+df = df.dropna(subset=[TIME_COL])
+
+for c in AXES:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
+
+df = df.dropna(subset=AXES).sort_values(TIME_COL).set_index(TIME_COL)
+
+print("Rows:", len(df))
+print("Scope:", df.index.min(), "->", df.index.max())
+
+
+#################################################
+
+
+# Model training code
+
+
+#################################################
+
+
+X_rows = []
+freq = f"{STEP_MINUTES}min"
+
+for window_end, _ in df.groupby(pd.Grouper(freq=freq, label="right", closed="right")):
+    window_start = window_end - pd.Timedelta(minutes=WINDOW_MINUTES)
+    w = df.loc[(df.index > window_start) & (df.index <= window_end)]
+    if len(w) < MIN_ROWS:
+        continue
+    X_rows.append(window_features_15(w))
+
+X = pd.DataFrame(X_rows, columns=FEATURE_NAMES)
+
+print("Okien treningowych:", len(X))
+if len(X) == 0:
+    raise RuntimeError("Brak okien do treningu. Zmniejsz MIN_ROWS albo daj więcej danych.")
+
+# pipeline: scaler + IsolationForest
+pipe = Pipeline(steps=[
+    ("scaler", StandardScaler()),
+    ("iso", IsolationForest(
+        n_estimators=600,
+        contamination=0.01,
+        random_state=42,
+        n_jobs=-1
+    ))
+])
+
+pipe.fit(X)
+
+# anomaly_score = -score_samples (Higher = worst suspected)
+train_scores = -pipe.score_samples(X)
+
+print("\nPercentyle anomaly_score na treningu (podgląd):")
+for p in [0, 50, 90, 95, 99, 100]:
+    print(f"p{p:>3}: {np.percentile(train_scores, p):.6f}")
+
+joblib.dump(pipe, MODEL_OUT)
+print("\nZapisano model:", MODEL_OUT)
+
+
+#################################################
+
+
+# Model testing true data
+
+
+#################################################
+
+
+import time
+from datetime import datetime, timedelta, timezone
+import numpy as np
+import pandas as pd
+import psycopg
+from psycopg.rows import dict_row
+import joblib
+
+# ====== CONFIG  ======
+SOURCE_DSN = "postgresql://xxx:xxx@localhost:5432/stm"
+SINK_DSN   = "postgresql://xxx:xxx@localhost:5432/stm"
+
+SOURCE_TABLE = "stma2"
+TIME_COLUMN  = "timestamp"
+SINK_TABLE   = "xxxx"
+
+MODEL_PATH = "xxxx.joblib"
+MODEL_NAME = "xxxx"
+
+WINDOW_MINUTES = 1
+STEP_MINUTES   = 1
+MIN_ROWS       = 2
+
+START_TIME = "xxxx-xx-xx 08:00:00" 
+
+BACKFILL = True          # True = count history to max(timestamp)
+EXIT_WHEN_DONE = True    # True = end  backfill
+STORE_EMPTY = False      # True = write empty windows with predictions=NULL
+
+AXES = ["x", "y", "z"]
+FEATURE_NAMES = [f"{c}_{stat}" for c in AXES for stat in ["mean","std","min","max","last"]]
+
+def parse_utc(dt_str: str) -> datetime:
+    s = dt_str.strip().replace("Z", "+00:00").replace("T", " ")
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt
+
+def floor_to_step(dt: datetime, step: timedelta, anchor: datetime) -> datetime:
+    delta = dt - anchor
+    k = int(delta.total_seconds() // step.total_seconds())
+    return anchor + k * step
+
+def ensure_sink_table(conn, table_name: str):
+    ddl = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+      model_name   text        NOT NULL,
+      window_start timestamptz NOT NULL,
+      window_end   timestamptz NOT NULL,
+      ts           timestamptz NOT NULL,
+      prediction   double precision,
+      row_count    integer     NOT NULL,
+      created_at   timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (model_name, window_end)
+    );
+    CREATE INDEX IF NOT EXISTS idx_{table_name}_ts ON {table_name} (ts);
+    """
+    with conn.cursor() as cur:
+        cur.execute(ddl)
+    conn.commit()
+
+def get_last_processed_window_end(conn, table_name: str, model_name: str):
+    q = f"SELECT max(window_end) AS last_end FROM {table_name} WHERE model_name = %s;"
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(q, (model_name,))
+        row = cur.fetchone()
+    return row["last_end"] if row else None
+
+def get_source_max_ts(conn, table_name: str, time_column: str):
+    q = f'SELECT max("{time_column}") AS max_ts FROM {table_name};'
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(q)
+        row = cur.fetchone()
+    return row["max_ts"] if row else None
+
+def fetch_source_data(conn, table_name: str, time_column: str, start_ts: datetime, end_ts: datetime):
+    cols_sql = ", ".join([f'"{time_column}"'] + AXES)
+    q = f"""
+      SELECT {cols_sql}
+      FROM {table_name}
+      WHERE "{time_column}" >= %s AND "{time_column}" < %s
+      ORDER BY "{time_column}" ASC;
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(q, (start_ts, end_ts))
+        rows = cur.fetchall()
+    return pd.DataFrame(rows)
+
+def make_features_15(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame([[np.nan]*len(FEATURE_NAMES)], columns=FEATURE_NAMES)
+
+    feats = []
+    for c in AXES:
+        s = pd.to_numeric(df[c], errors="coerce").dropna().astype(float)
+        if s.empty:
+            feats.extend([np.nan, np.nan, np.nan, np.nan, np.nan])
+        else:
+            feats.extend([s.mean(), s.std(ddof=0), s.min(), s.max(), s.iloc[-1]])
+
+    return pd.DataFrame([feats], columns=FEATURE_NAMES)
+
+def anomaly_score(pipe, X: pd.DataFrame) -> float:
+    return float(-pipe.score_samples(X)[0])
+
+def upsert_prediction(conn, table_name: str, model_name: str,
+                      window_start: datetime, window_end: datetime,
+                      pred_value, row_count: int):
+    q = f"""
+      INSERT INTO {table_name}
+        (model_name, window_start, window_end, ts, prediction, row_count)
+      VALUES
+        (%s, %s, %s, %s, %s, %s)
+      ON CONFLICT (model_name, window_end)
+      DO UPDATE SET
+        window_start = EXCLUDED.window_start,
+        ts = EXCLUDED.ts,
+        prediction = EXCLUDED.prediction,
+        row_count = EXCLUDED.row_count;
+    """
+    with conn.cursor() as cur:
+        cur.execute(q, (model_name, window_start, window_end, window_end, pred_value, row_count))
+    conn.commit()
+print("ok")
+
+
+pipe = joblib.load(MODEL_PATH)
+
+start_time = parse_utc(START_TIME)
+step = timedelta(minutes=STEP_MINUTES)
+window = timedelta(minutes=WINDOW_MINUTES)
+
+with psycopg.connect(SOURCE_DSN) as src_conn, psycopg.connect(SINK_DSN) as sink_conn:
+    ensure_sink_table(sink_conn, SINK_TABLE)
+
+    end_limit = None
+    if BACKFILL:
+        mx = get_source_max_ts(src_conn, SOURCE_TABLE, TIME_COLUMN)
+        if mx is None:
+            raise RuntimeError("Źródło nie ma danych (max(timestamp)=NULL).")
+        
+        if mx.tzinfo is None:
+            mx = mx.replace(tzinfo=timezone.utc)
+        else:
+            mx = mx.astimezone(timezone.utc)
+        end_limit = mx
+
+    while True:
+        last_end = get_last_processed_window_end(sink_conn, SINK_TABLE, MODEL_NAME)
+
+        now = datetime.now(timezone.utc)
+        now_end = floor_to_step(now, step, start_time)
+
+        if BACKFILL and end_limit is not None:
+            end_floor = floor_to_step(end_limit, step, start_time)
+            now_end = min(now_end, end_floor)
+
+        if last_end is None:
+            next_end = (start_time + window) if BACKFILL else now_end
+        else:
+            next_end = last_end + step
+
+        if next_end > now_end:
+            if EXIT_WHEN_DONE and BACKFILL:
+                print("[done] Backfill zakończony.")
+                break
+            time.sleep(1)
+            continue
+
+        while next_end <= now_end:
+            window_start = next_end - window
+            dfw = fetch_source_data(src_conn, SOURCE_TABLE, TIME_COLUMN, window_start, next_end)
+            row_count = int(len(dfw))
+
+            if row_count < MIN_ROWS:
+                if STORE_EMPTY:
+                    upsert_prediction(sink_conn, SINK_TABLE, MODEL_NAME, window_start, next_end, None, row_count)
+                    print(f"[empty] {window_start.isoformat()} -> {next_end.isoformat()} rows={row_count}")
+                else:
+                    print(f"[skip]  {window_start.isoformat()} -> {next_end.isoformat()} rows={row_count}")
+            else:
+                X_one = make_features_15(dfw)
+                score = anomaly_score(pipe, X_one)
+                upsert_prediction(sink_conn, SINK_TABLE, MODEL_NAME, window_start, next_end, score, row_count)
+                print(f"[ok]    {window_start.isoformat()} -> {next_end.isoformat()} rows={row_count} score={score}")
+
+            next_end = next_end + step
+
+        time.sleep(0.2)
+
+
+
+#################################################

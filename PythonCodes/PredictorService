@@ -1,0 +1,413 @@
+
+
+#################################################
+
+
+# Program Rpi to manage prediction in Real Time
+#* not tested yet
+
+
+#################################################
+
+# instructions
+
+
+python3 predictor_service_flexible.py \
+  --dsn "postgresql://monio:monio@192.168.0.10:5432/stm" \
+  --source-table stma2 \
+  --sink-table predictions_accel \
+  --mode accel \
+  --time-col timestamp \
+  --window 5 \
+  --step 1 \
+  --unit seconds \
+  --min-rows 50 \
+  --model-path model.joblib \
+  --start-time "2025-11-27 09:00:00"
+
+python3 predictor_service_flexible.py \
+  --dsn "postgresql://monio:monio@192.168.0.10:5432/mcp3008" \
+  --source-table mcp_voltage \
+  --sink-table predictions_voltage \
+  --mode voltage \
+  --time-col ts \
+  --window 3 \
+  --step 1 \
+  --unit seconds \
+  --min-rows 20 \
+  --model-path model.joblib
+
+  
+#################################################
+
+  
+import os
+import time
+import argparse
+from datetime import datetime, timedelta, timezone
+
+import numpy as np
+import pandas as pd
+import psycopg
+from psycopg.rows import dict_row
+import joblib
+
+# ============================================================
+# UTILS
+# ============================================================
+
+def parse_utc(dt_str):
+    if not dt_str:
+        return None
+    s = dt_str.replace("Z", "+00:00")
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+def floor_time(dt, step, anchor):
+    delta = dt - anchor
+    k = int(delta.total_seconds() // step.total_seconds())
+    return anchor + k * step
+
+# ============================================================
+# FEATURE ENGINEERING
+# ============================================================
+
+def make_features_accel(df):
+    if df.empty:
+        return None
+
+    feats = []
+    for col in ["x", "y", "z"]:
+        s = pd.to_numeric(df[col], errors="coerce")
+
+        feats.extend([
+            s.mean(),
+            s.std(),
+            s.min(),
+            s.max(),
+            s.iloc[-1],
+            s.max() - s.min(),
+            s.diff().std()
+        ])
+
+    return np.array(feats).reshape(1, -1)
+
+
+def make_features_voltage(df):
+    if df.empty:
+        return None
+
+    s = pd.to_numeric(df["voltage"], errors="coerce")
+
+    feats = [
+        s.mean(),
+        s.std(),
+        s.min(),
+        s.max(),
+        s.iloc[-1],
+        s.max() - s.min(),
+        s.diff().std()
+    ]
+
+    return np.array(feats).reshape(1, -1)
+
+# ============================================================
+# DB
+# ============================================================
+
+def ensure_table(conn, table):
+    q = f"""
+    CREATE TABLE IF NOT EXISTS {table} (
+        ts timestamptz PRIMARY KEY,
+        prediction double precision,
+        row_count int
+    );
+    """
+    with conn.cursor() as cur:
+        cur.execute(q)
+    conn.commit()
+
+def insert_prediction(conn, table, ts, pred, rows):
+    q = f"""
+    INSERT INTO {table} (ts, prediction, row_count)
+    VALUES (%s, %s, %s)
+    ON CONFLICT (ts) DO UPDATE
+    SET prediction = EXCLUDED.prediction,
+        row_count = EXCLUDED.row_count;
+    """
+    with conn.cursor() as cur:
+        cur.execute(q, (ts, pred, rows))
+    conn.commit()
+
+# ============================================================
+# MAIN LOOP
+# ============================================================
+
+def main():
+    ap = argparse.ArgumentParser()
+
+    ap.add_argument("--dsn", required=True)
+    ap.add_argument("--source-table", required=True)
+    ap.add_argument("--sink-table", default="predictions")
+
+    ap.add_argument("--mode", choices=["accel", "voltage"], required=True)
+
+    ap.add_argument("--time-col", default="timestamp")
+
+    ap.add_argument("--window", type=float, default=5)
+    ap.add_argument("--step", type=float, default=5)
+    ap.add_argument("--unit", choices=["seconds", "minutes"], default="seconds")
+
+    ap.add_argument("--min-rows", type=int, default=10)
+
+    ap.add_argument("--model-path", required=True)
+
+    ap.add_argument("--start-time", default=None)
+
+    args = ap.parse_args()
+
+    # czas
+    if args.unit == "seconds":
+        window = timedelta(seconds=args.window)
+        step = timedelta(seconds=args.step)
+    else:
+        window = timedelta(minutes=args.window)
+        step = timedelta(minutes=args.step)
+
+    anchor = parse_utc(args.start_time) if args.start_time else datetime.now(timezone.utc)
+
+    model = joblib.load(args.model_path)
+
+    with psycopg.connect(args.dsn) as conn:
+        ensure_table(conn, args.sink_table)
+
+        last_time = anchor
+
+        while True:
+            now = datetime.now(timezone.utc)
+            current_end = floor_time(now, step, anchor)
+
+            while last_time + step <= current_end:
+                window_end = last_time + step
+                window_start = window_end - window
+
+                q = f"""
+                SELECT *
+                FROM {args.source_table}
+                WHERE "{args.time_col}" >= %s
+                  AND "{args.time_col}" < %s
+                ORDER BY "{args.time_col}";
+                """
+
+                df = pd.read_sql(q, conn, params=(window_start, window_end))
+
+                rows = len(df)
+
+                if rows < args.min_rows:
+                    print(f"[skip] {window_start} rows={rows}")
+                else:
+                    if args.mode == "accel":
+                        X = make_features_accel(df)
+                    else:
+                        X = make_features_voltage(df)
+
+                    score = -model.decision_function(X)[0]
+
+                    insert_prediction(conn, args.sink_table, window_end, score, rows)
+
+                    print(f"[ok] {window_end} score={score:.4f} rows={rows}")
+
+                last_time = window_end
+
+            time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()import os
+import time
+import argparse
+from datetime import datetime, timedelta, timezone
+
+import numpy as np
+import pandas as pd
+import psycopg
+from psycopg.rows import dict_row
+import joblib
+
+# ============================================================
+# UTILS
+# ============================================================
+
+def parse_utc(dt_str):
+    if not dt_str:
+        return None
+    s = dt_str.replace("Z", "+00:00")
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+def floor_time(dt, step, anchor):
+    delta = dt - anchor
+    k = int(delta.total_seconds() // step.total_seconds())
+    return anchor + k * step
+
+# ============================================================
+# FEATURE ENGINEERING
+# ============================================================
+
+def make_features_accel(df):
+    if df.empty:
+        return None
+
+    feats = []
+    for col in ["x", "y", "z"]:
+        s = pd.to_numeric(df[col], errors="coerce")
+
+        feats.extend([
+            s.mean(),
+            s.std(),
+            s.min(),
+            s.max(),
+            s.iloc[-1],
+            s.max() - s.min(),
+            s.diff().std()
+        ])
+
+    return np.array(feats).reshape(1, -1)
+
+
+def make_features_voltage(df):
+    if df.empty:
+        return None
+
+    s = pd.to_numeric(df["voltage"], errors="coerce")
+
+    feats = [
+        s.mean(),
+        s.std(),
+        s.min(),
+        s.max(),
+        s.iloc[-1],
+        s.max() - s.min(),
+        s.diff().std()
+    ]
+
+    return np.array(feats).reshape(1, -1)
+
+# ============================================================
+# DB
+# ============================================================
+
+def ensure_table(conn, table):
+    q = f"""
+    CREATE TABLE IF NOT EXISTS {table} (
+        ts timestamptz PRIMARY KEY,
+        prediction double precision,
+        row_count int
+    );
+    """
+    with conn.cursor() as cur:
+        cur.execute(q)
+    conn.commit()
+
+def insert_prediction(conn, table, ts, pred, rows):
+    q = f"""
+    INSERT INTO {table} (ts, prediction, row_count)
+    VALUES (%s, %s, %s)
+    ON CONFLICT (ts) DO UPDATE
+    SET prediction = EXCLUDED.prediction,
+        row_count = EXCLUDED.row_count;
+    """
+    with conn.cursor() as cur:
+        cur.execute(q, (ts, pred, rows))
+    conn.commit()
+
+# ============================================================
+# MAIN LOOP
+# ============================================================
+
+def main():
+    ap = argparse.ArgumentParser()
+
+    ap.add_argument("--dsn", required=True)
+    ap.add_argument("--source-table", required=True)
+    ap.add_argument("--sink-table", default="predictions")
+
+    ap.add_argument("--mode", choices=["accel", "voltage"], required=True)
+
+    ap.add_argument("--time-col", default="timestamp")
+
+    ap.add_argument("--window", type=float, default=5)
+    ap.add_argument("--step", type=float, default=5)
+    ap.add_argument("--unit", choices=["seconds", "minutes"], default="seconds")
+
+    ap.add_argument("--min-rows", type=int, default=10)
+
+    ap.add_argument("--model-path", required=True)
+
+    ap.add_argument("--start-time", default=None)
+
+    args = ap.parse_args()
+
+    # czas
+    if args.unit == "seconds":
+        window = timedelta(seconds=args.window)
+        step = timedelta(seconds=args.step)
+    else:
+        window = timedelta(minutes=args.window)
+        step = timedelta(minutes=args.step)
+
+    anchor = parse_utc(args.start_time) if args.start_time else datetime.now(timezone.utc)
+
+    model = joblib.load(args.model_path)
+
+    with psycopg.connect(args.dsn) as conn:
+        ensure_table(conn, args.sink_table)
+
+        last_time = anchor
+
+        while True:
+            now = datetime.now(timezone.utc)
+            current_end = floor_time(now, step, anchor)
+
+            while last_time + step <= current_end:
+                window_end = last_time + step
+                window_start = window_end - window
+
+                q = f"""
+                SELECT *
+                FROM {args.source_table}
+                WHERE "{args.time_col}" >= %s
+                  AND "{args.time_col}" < %s
+                ORDER BY "{args.time_col}";
+                """
+
+                df = pd.read_sql(q, conn, params=(window_start, window_end))
+
+                rows = len(df)
+
+                if rows < args.min_rows:
+                    print(f"[skip] {window_start} rows={rows}")
+                else:
+                    if args.mode == "accel":
+                        X = make_features_accel(df)
+                    else:
+                        X = make_features_voltage(df)
+
+                    score = -model.decision_function(X)[0]
+
+                    insert_prediction(conn, args.sink_table, window_end, score, rows)
+
+                    print(f"[ok] {window_end} score={score:.4f} rows={rows}")
+
+                last_time = window_end
+
+            time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()
+  

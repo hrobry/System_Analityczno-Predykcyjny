@@ -1,0 +1,336 @@
+
+
+#################################################
+
+
+# Program Rpi to recieve information from sensor ADXL345
+
+
+#################################################
+
+
+# comand to run system
+# python3 udp10.py --proto udp --local-ip x.x.x.x --port 5005 --peer x.x.x.x --db-name stm --db-user xx --db-password xx
+
+import argparse
+import socket
+import sys
+from datetime import datetime
+import json
+import psycopg2
+from contextlib import contextmanager
+
+# Konfiguracja bazy danych PostgreSQL
+DB_CONFIG = {
+    'dbname': 'stm',
+    'user': 'monio',
+    'password': 'monio',
+    'host': 'localhost',
+    'port': '5432'
+}
+
+@contextmanager
+def get_db_connection():
+    """Context manager dla połączenia z PostgreSQL"""
+    conn = psycopg2.connect(**DB_CONFIG)
+    conn.autocommit = False
+    try:
+        yield conn
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
+
+def init_database():
+    """Inicjalizacja bazy danych i tworzenie prostej tabeli pomiary"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+
+
+                CREATE TABLE IF NOT EXISTS stma2 (
+                    id SERIAL PRIMARY KEY,
+
+                    x REAL,
+                    y REAL,
+                    z REAL,
+                     ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+            print(f"[DB] PostgreSQL database initialized: {DB_CONFIG['dbname']}")
+    except Exception as e:
+        print(f"[DB] Error initializing database: {e}")
+
+def save_measurement(x, y, z):
+    """Zapisuje pomiar do bazy danych z aktualnym czasem"""
+    print(f"[SAVE] ⚡⚡⚡ WYWOŁANO save_measurement! x={x}, y={y}, z={z}")
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            print(f"[SAVE] Połączenie z bazą OK")
+
+            # UŻYJ AKTUALNEGO CZASU
+            current_time = datetime.now()
+
+            print(f"[SAVE] Używam czasu: {current_time}")
+
+            # Wstaw dane Z timestamp - BEZ RETURNING ID
+            cursor.execute('''
+                INSERT INTO stma2 (timestamp, x, y, z)
+                VALUES (%s, %s, %s, %s)
+            ''', (current_time, x, y, z))
+
+            conn.commit()
+
+            # Pobierz ostatni ID alternatywną metodą
+            cursor.execute("SELECT lastval()")
+            new_id = cursor.fetchone()[0]
+
+            print(f"[SAVE] ✅ SUKCES! Zapisano rekord z ID: {new_id}, czas: {current_time}")
+            return True
+
+    except Exception as e:
+        print(f"[SAVE] ❌ BŁĄD zapisu do PostgreSQL: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+def parse_sensor_data(data):
+    """
+    Rozdziela dane na timestamp, x, y, z.
+    Obsługuje formaty: JSON i CSV
+    """
+    try:
+        # Jeśli dane są w formacie bytes, próbuj dekodować
+        if isinstance(data, bytes):
+            data_str = data.decode('utf-8').strip()
+        else:
+            data_str = str(data).strip()
+
+        # Próba parsowania jako JSON
+        if data_str.startswith('{') and data_str.endswith('}'):
+            try:
+                parsed = json.loads(data_str)
+                return {
+
+                    'x': parsed.get('x'),
+                    'y': parsed.get('y'),
+                    'z': parsed.get('z')
+                }
+            except json.JSONDecodeError:
+                pass
+
+        # Próba parsowania jako CSV (timestamp,x,y,z)
+        parts = data_str.split(',')
+        if len(parts) >= 3:
+            return {
+
+                'x': float(parts[0]) if parts[0] and parts[0].strip() else None,
+                'y': float(parts[1]) if parts[1] and parts[1].strip() else None,
+                'z': float(parts[2]) if parts[2] and parts[2].strip() else None
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"Błąd parsowania danych: {e}")
+        return None
+
+def recv_udp(local_ip, port, peer_ip=None, logfile=None, bufsize=4096):
+    """Odbieranie danych przez UDP"""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((local_ip, port))
+    print(f"[UDP] Listening on {local_ip}:{port} (accepting from {peer_ip or 'ANY'})")
+
+    try:
+        while True:
+            data, addr = sock.recvfrom(bufsize)
+            src_ip, src_port = addr
+
+            # Sprawdź czy akceptować od tego IP
+            if peer_ip and src_ip != peer_ip:
+                print(f"[UDP] Ignored packet from {src_ip}:{src_port}")
+                continue
+
+            current_time = datetime.utcnow()
+
+            # Parsowanie danych sensorowych
+            sensor_data = parse_sensor_data(data)
+
+            if sensor_data:
+                # Użyj timestamp z danych lub bieżącego czasu
+                timestamp = sensor_data.get('timestamp')
+                if not timestamp:
+                    timestamp = current_time
+
+                # Zapisz do bazy danych
+                db_success = save_measurement(
+
+                    sensor_data.get('x'),
+                    sensor_data.get('y'),
+                    sensor_data.get('z')
+                )
+
+                # Formatuj linię do wyświetlenia
+                line = (f"{current_time.isoformat()}Z UDP {src_ip}:{src_port} {len(data)} bytes -> "
+                       f"timestamp:{timestamp} x:{sensor_data['x']} y:{sensor_data['y']} z:{sensor_data['z']} DB:{'OK' if db_success else 'FAIL'}")
+            else:
+                # Fallback dla nieznanych danych
+                try:
+                    text = data.decode('utf-8')
+                except UnicodeDecodeError:
+                    text = data.hex()
+                line = f"{current_time.isoformat()}Z UDP {src_ip}:{src_port} {len(data)} bytes -> {text}"
+
+            print(line)
+            if logfile:
+                with open(logfile, "a") as f:
+                    f.write(line + "\n")
+
+    except KeyboardInterrupt:
+        print("Interrupted, exiting.")
+    finally:
+        sock.close()
+
+def recv_tcp(local_ip, port, peer_ip=None, logfile=None, bufsize=4096):
+    """Odbieranie danych przez TCP"""
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind((local_ip, port))
+    srv.listen(1)
+    print(f"[TCP] Listening on {local_ip}:{port} (accepting from {peer_ip or 'ANY'})")
+
+    try:
+        while True:
+            conn, addr = srv.accept()
+            src_ip, src_port = addr
+
+            if peer_ip and src_ip != peer_ip:
+                print(f"[TCP] Rejected connection from {src_ip}:{src_port}")
+                conn.close()
+                continue
+
+            print(f"[TCP] Accepted connection from {src_ip}:{src_port}")
+            with conn:
+                while True:
+                    data = conn.recv(bufsize)
+                    if not data:
+                        print("[TCP] Connection closed by peer")
+                        break
+
+                    current_time = datetime.utcnow()
+
+                    # Parsowanie danych sensorowych
+                    sensor_data = parse_sensor_data(data)
+
+                    if sensor_data:
+                        # Użyj timestamp z danych lub bieżącego czasu
+                        timestamp = sensor_data.get('timestamp')
+                        if not timestamp:
+                            timestamp = current_time
+
+                        # Zapisz do bazy danych
+                        db_success = save_measurement(
+
+                            sensor_data.get('x'),
+                            sensor_data.get('y'),
+                            sensor_data.get('z')
+                        )
+
+                        line = (f"{current_time.isoformat()}Z TCP {src_ip}:{src_port} {len(data)} bytes -> "
+                               f"timestamp:{timestamp} x:{sensor_data['x']} y:{sensor_data['y']} z:{sensor_data['z']} DB:{'OK' if db_success else 'FAIL'}")
+                    else:
+                        try:
+                            text = data.decode('utf-8')
+                        except UnicodeDecodeError:
+                            text = data.hex()
+                        line = f"{current_time.isoformat()}Z TCP {src_ip}:{src_port} {len(data)} bytes -> {text}"
+
+                    print(line)
+                    if logfile:
+                        with open(logfile, "a") as f:
+                            f.write(line + "\n")
+    except KeyboardInterrupt:
+        print("Interrupted, exiting.")
+    finally:
+        srv.close()
+
+def query_database(limit=10):
+    """Wyświetla ostatnie pomiary z bazy danych"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) as count FROM pomiary")
+            count = cursor.fetchone()[0]
+            print(f"[DB] Total records in database: {count}")
+
+            cursor.execute("""
+                SELECT id, x, y, z
+                FROM pomiary
+                ORDER BY id DESC
+                LIMIT %s
+            """, (limit,))
+            recent = cursor.fetchall()
+            print(f"\n[DB] Recent {len(recent)} records:")
+            for row in recent:
+                print(f"  ID: {row[0]}, Time: {row[1]}, XYZ: ({row[2]}, {row[3]}, {row[4]})")
+    except Exception as e:
+        print(f"[DB] Error querying database: {e}")
+
+def main():
+    parser = argparse.ArgumentParser(description="UDP/TCP receiver with PostgreSQL storage")
+    parser.add_argument("--proto", choices=["udp","tcp"], default="udp", help="protocol")
+    parser.add_argument("--local-ip", required=True, help="local IP to bind")
+    parser.add_argument("--port", type=int, required=True, help="local port to listen on")
+    parser.add_argument("--peer", dest="peer_ip", help="optional: accept only from this peer IP")
+    parser.add_argument("--log", dest="logfile", help="optional: append received messages to this file")
+    parser.add_argument("--buf", dest="bufsize", type=int, default=4096, help="receive buffer size")
+    parser.add_argument("--query", action="store_true", help="query database and exit")
+    parser.add_argument("--limit", type=int, default=10, help="limit for query results")
+
+    # Opcje konfiguracji bazy danych
+    parser.add_argument("--db-host", default="localhost", help="PostgreSQL host")
+    parser.add_argument("--db-port", type=int, default=5432, help="PostgreSQL port")
+    parser.add_argument("--db-name", default="sensor_db", help="PostgreSQL database name")
+    parser.add_argument("--db-user", default="postgres", help="PostgreSQL user")
+    parser.add_argument("--db-password", default="password", help="PostgreSQL password")
+
+    args = parser.parse_args()
+
+    # Aktualizacja konfiguracji bazy danych
+    DB_CONFIG.update({
+        'host': args.db_host,
+        'port': args.db_port,
+        'dbname': args.db_name,
+        'user': args.db_user,
+        'password': args.db_password
+    })
+
+    # Inicjalizacja bazy danych
+    init_database()
+
+    if args.query:
+        query_database(args.limit)
+        return
+
+    # Walidacja adresu IP
+    try:
+        socket.inet_aton(args.local_ip)
+        if args.peer_ip:
+            socket.inet_aton(args.peer_ip)
+    except socket.error:
+        print("Invalid IP address provided.")
+        sys.exit(1)
+
+    # Uruchomienie odpowiedniego protokołu
+    if args.proto == "udp":
+        recv_udp(args.local_ip, args.port, args.peer_ip, args.logfile, args.bufsize)
+    else:
+        recv_tcp(args.local_ip, args.port, args.peer_ip, args.logfile, args.bufsize)
+
+if __name__ == "__main__":
+    main()
